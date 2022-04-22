@@ -903,8 +903,10 @@ impl Subscriber {
     ///  subscriber.unsubscribe();
     /// # Ok(())
     /// # }
-    pub fn unsubscribe(self) {
-        drop(self)
+    pub async fn unsubscribe(&mut self) {
+        self.receiver.close()
+    }
+
     }
 }
 
