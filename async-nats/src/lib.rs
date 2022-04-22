@@ -908,7 +908,11 @@ impl Subscriber {
     /// # Ok(())
     /// # }
     pub async fn unsubscribe(&mut self) {
-        self.receiver.close()
+        self.receiver.close();
+        self.sender
+            .send(ClientOp::Unsubscribe { id: self.uid })
+            .await
+            .ok();
     }
 
     /// Unsubscribes from subscription after reaching given number of messages.
@@ -941,6 +945,10 @@ impl Subscriber {
         if let Some(max) = self.max {
             if self.delivered.ge(&max) {
                 self.receiver.close();
+                self.sender
+                    .send(ClientOp::Unsubscribe { id: self.uid })
+                    .await
+                    .ok();
             }
         }
     }
