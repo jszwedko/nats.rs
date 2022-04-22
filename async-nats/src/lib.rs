@@ -873,6 +873,8 @@ pub struct Message {
 /// ```
 pub struct Subscriber {
     uid: u64,
+    delivered: u64,
+    max: Option<u64>,
     receiver: mpsc::Receiver<Message>,
     sender: mpsc::Sender<ClientOp>,
 }
@@ -887,6 +889,8 @@ impl Subscriber {
             uid,
             sender,
             receiver,
+            max: None,
+            delivered: 0,
         }
     }
 
@@ -907,6 +911,38 @@ impl Subscriber {
         self.receiver.close()
     }
 
+    /// Unsubscribes from subscription after reaching given number of messages.
+    /// This is the total number of messages received by this subcsription in it's whole
+    /// lifespan. If it already reeached or surpassed the passed value, it will immediately stop.
+    ///
+    /// # Examples
+    /// ```
+    /// # use futures_util::StreamExt;
+    /// # #[tokio::main]
+    /// # async fn unsubscribe() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut client = async_nats::connect("demo.nats.io").await?;
+    ///
+    /// for _ in 0..3 {
+    ///     client.publish("test".into(), "data".into()).await?;
+    /// }
+    ///
+    /// let mut sub = client.subscribe("test".into()).await?;
+    /// sub.unsubscribe_after(3).await;
+    /// client.flush().await?;
+    ///
+    /// while let Some(message) = sub.next().await {
+    ///     println!("message received: {:?}", message);
+    /// }
+    /// println!("no more messages, unsubscribed");
+    /// # Ok(())
+    /// # }
+    pub async fn unsubscribe_after(&mut self, unsub_after: u64) {
+        self.max = Some(unsub_after);
+        if let Some(max) = self.max {
+            if self.delivered.ge(&max) {
+                self.receiver.close();
+            }
+        }
     }
 }
 
@@ -927,6 +963,12 @@ impl Stream for Subscriber {
     type Item = Message;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if let Some(max) = self.max {
+            if self.delivered.ge(&max) {
+                self.receiver.close();
+            }
+        }
+        self.delivered += 1;
         self.receiver.poll_recv(cx)
     }
 }
